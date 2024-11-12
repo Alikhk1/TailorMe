@@ -11,6 +11,6 @@
 **Tech Stack:**
 
 - **Backend:** Python (for image processing and classification)
-- **Frontend: **Simple, user-friendly interface for easy size recommendations.
+- **Frontend:** Simple, user-friendly interface for easy size recommendations.
 
 **Project Goal:** To provide a reliable and accessible tool for users to determine their clothing measurements, enhancing online shopping experiences and reducing sizing-related returns.
