@@ -1,5 +1,5 @@
 # TailorMe - Body Measurement & Size Recommendation App
-****
+
 TailorMe is a body measurement and size recommendation app designed to assist users in selecting well-fitted clothing. Using image processing and computer vision techniques, the app measures essential body parameters like neck, waist, shoulder, height, and arm length.
 
 Features:
