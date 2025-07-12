@@ -1,0 +1,127 @@
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers, regularizers
+import numpy as np
+import pandas as pd
+import os
+import cv2
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import joblib
+
+# === 1. Load and Prepare Data ===
+
+# Load measurements from Excel
+excel_path = '/content/drive/MyDrive/Dataset/measurements.xlsx'
+data = pd.read_excel(excel_path)
+
+# Extract image filenames and labels
+image_filenames = data.iloc[:, 0].values
+labels = data.iloc[:, 1:].values  # 8 measurements
+
+# Normalize labels
+scaler = StandardScaler()
+labels = scaler.fit_transform(labels)
+
+# Save the scaler for later use
+joblib.dump(scaler, 'resnet_scaler.pkl')
+print("Scaler saved as 'resnet_scaler.pkl'")
+
+# Load and preprocess images
+image_dir = '/content/drive/MyDrive/Dataset/images'
+image_size = (128, 128)
+
+def load_images(filenames, image_dir, image_size):
+    images = []
+    for filename in filenames:
+        img_path = os.path.join(image_dir, filename)
+        img = cv2.imread(img_path)
+        if img is not None:
+            img = cv2.resize(img, image_size)
+            img = img / 255.0  # Normalize pixels
+            images.append(img)
+    return np.array(images)
+
+X = load_images(image_filenames, image_dir, image_size)
+Y = labels
+
+# Split into train/test
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+# === 2. Data Augmentation ===
+
+data_augmentation = keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+])
+
+def augment_images(images):
+    return data_augmentation(images)
+
+X_train_aug = augment_images(X_train)
+
+# === 3. Model Definition with L2 Regularization ===
+
+def create_resnet_model():
+    base_model = tf.keras.applications.ResNet50(
+        input_shape=(128, 128, 3),
+        include_top=False,
+        weights='imagenet'
+    )
+    base_model.trainable = True
+
+    # Fine-tune last 10 layers
+    for layer in base_model.layers[:-5]:
+        layer.trainable = False
+
+    model = keras.Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
+        layers.Dense(
+            128,
+            activation='relu',
+            kernel_regularizer=regularizers.l2(1e-3)  # L2 Regularization
+        ),
+        layers.BatchNormalization(),
+        layers.Dropout(0.2),
+        layers.Dense(
+            8,
+            kernel_regularizer=regularizers.l2(5e-5)
+        )
+    ])
+
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+        loss='mse',
+        metrics=['mae']
+    )
+    return model
+
+# === 4. Train Model ===
+
+resnet_model = create_resnet_model()
+
+early_stopping = keras.callbacks.EarlyStopping(
+    monitor='val_mae',
+    mode='min',
+    patience=10,
+    restore_best_weights=True
+)
+
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor='val_mae',
+    factor=0.5,
+    patience=5,
+    min_lr=1e-6
+)
+
+resnet_model.fit(
+    X_train_aug, Y_train,
+    epochs=100,
+    batch_size=8,
+    validation_data=(X_test, Y_test),
+    callbacks=[early_stopping, reduce_lr]
+)
